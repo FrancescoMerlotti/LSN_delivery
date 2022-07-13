@@ -30,6 +30,7 @@ class City {
 
 // Simulation setup
 int ncities, nconf, nsteps, nmigr, ntime;
+double exponent;
 vector<vector<int>> population;
 vector<int> best;
 int ** pop;
@@ -50,11 +51,13 @@ void Permutation(int);
 void PermutationCluster(int);
 void Reverse(int);
 void Queue(int);
-vector<int> CrossingOver(int, int);
+void Mutations();
+void CrossingOver(int, int);
 double Distance(City &, City &);
 double PathLength(vector<int>);
-void Selection();
+void Selection(double);
 void PrintFile(int, int);
+void PrintBestPath(int);
 bool IsBest();
 void LoadPopulation();
 void SavePopulation();

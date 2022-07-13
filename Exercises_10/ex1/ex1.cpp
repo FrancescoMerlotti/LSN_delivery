@@ -11,15 +11,14 @@
 using namespace std;
 
 int main(int argc, char** argv) {
-
 	// Parallelization
 	int size, rank;
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
+	// Start tracing time
 	double t_beg = MPI_Wtime();
-
+	// Controls
 	if(argc != 2) {
 		cout << endl << "Correct usage: mpiexec -np <nproc> ./ex1.exe <nseed>" << endl;
 		return -1;
@@ -29,8 +28,6 @@ int main(int argc, char** argv) {
 		cout << endl << "Processes need to be even" << endl;
 		return -3;
 	}
-
-	ofstream Output;
 	// Input
 	Input(rank, atoi(argv[1]));
 	// Simulation performing
@@ -41,57 +38,60 @@ int main(int argc, char** argv) {
 	// Display();
 	for(int istep = 0; istep < nsteps; istep++) {
 		// Crossing over between the selected chromosomes (steady state)
-		Selection();
-		population[ncities - 1] = CrossingOver(in1, in2);
+		Selection(exponent);
+		CrossingOver(in1, in2);
 		// Ordering the new population
 		Order();		
-		// Mutations on the selected chromosome
-		// Permutation
-		if(rnd.Rannyu() <= 0.1)
-			Permutation(int(0.5 * ncities * rnd.Rannyu()));
-		// Permutation Cluster
-		if(rnd.Rannyu() <= 0.1)
-			PermutationCluster(int(0.5 * ncities * rnd.Rannyu()));
-		// Reverse
-		if(rnd.Rannyu() <= 0.1)
-			Reverse(int(0.5 * ncities * rnd.Rannyu()));
-		// Queue
-		if(rnd.Rannyu() <= 0.1)
-			Queue(int(0.5 * ncities * rnd.Rannyu()));
-		// Tracing the best solution
-		IsBest();
+		// Mutations
+		Mutations();
 		// Migration
-		if(istep % ntime == 0) {
-			MPI_Status stat0, stat1;
-			// MPI_Request req;
+		if(istep != 0 and istep % ntime == 0) {
+			MPI_Status stat;
+			MPI_Request req;
+			int ind;
+			// Indeces for migration
+			int * imigr = new int[size];
+			if(rank == 0) {
+				// Array for generation of schedule
+				int * procs = new int[size];
+				// Processes
+				for(int ip = 0; ip < size; ip++)
+					procs[ip] = ip;
+				// Schedule formation
+				for(int ip = 0; ip < size; ip++) {
+					int appo, index = int(rnd.Rannyu(0., size - ip));
+					imigr[ip] = procs[index];
+					appo = procs[index];
+					procs[index] = procs[size - 1 - ip];
+					procs[size - 1 -ip] = appo;
+				}
+			}
+			// Broadcast to every node
+			MPI_Bcast(imigr, size, MPI_INTEGER, 0, MPI_COMM_WORLD);
+			// Load population from vector to array
 			LoadPopulation();
-			if(rank % 2 == 0) {
-				for(int im = 0; im < nmigr; im++) {
-					MPI_Send(pop[im], ncities, MPI_INTEGER, Pbc(rank+1, size), im * 10 + rank, MPI_COMM_WORLD);
-					MPI_Recv(pop[nconf - nmigr + im], ncities, MPI_INTEGER, Pbc(rank-1, size), im * 10 + Pbc(rank-1, size), MPI_COMM_WORLD, &stat1);
-				}
+			// Reading sending node
+			for(int ip = 0; ip < size; ip++)
+				if(imigr[ip] == rank)
+					ind = ip;
+			// Bidirectional communication 
+			for(int im = 0; im < nmigr; im++) {
+				MPI_Isend(pop[im], ncities, MPI_INTEGER, imigr[rank], im * 10 + rank, MPI_COMM_WORLD, &req);
+				MPI_Recv(pop[nconf - nmigr + im], ncities, MPI_INTEGER, ind, im * 10 + ind, MPI_COMM_WORLD, &stat);
 			}
-			else if(rank % 2 == 1) {
-				for(int im = 0; im < nmigr; im++) {
-					MPI_Recv(pop[nconf - nmigr + im], ncities, MPI_INTEGER, Pbc(rank-1, size), im * 10 + Pbc(rank-1, size), MPI_COMM_WORLD, &stat0);
-					MPI_Send(pop[im], ncities, MPI_INTEGER, Pbc(rank+1, size), im * 10 + rank, MPI_COMM_WORLD);
-				}
-			}
+			// Save population from array to vector
 			SavePopulation();
 		}
 		// Printing on file
 		PrintFile(istep, rank);
+		// Tracing the best solution
+		IsBest();
 	}
 	// Printing the best path
-	Output.open("./output/bestPath/output_bestPath" + to_string(rank) + ".dat");
-	Output << "Best path (Length = " << setw(8) << PathLength(population[0]) << "):" << endl;
-	for(int ic = 0; ic < ncities; ic++)
-		Output << setw(4) << population[0][ic] << endl;
-	Output.close();
-
+	PrintBestPath(rank);
+	// Keep trace of execution time and finalize the parallel execution
 	double t_end = MPI_Wtime();
 	cout << endl << "Execution time for node " << rank << ": " << t_end - t_beg << endl;
-
 	MPI_Finalize();
 
 	return 0;
@@ -103,13 +103,13 @@ void Input(int rank, int nseed) {
 	ifstream Primes, Seed, Setup;
 	int p1, p2;
 	Setup.open("setup.dat");
-	Setup >> ncities >> nconf >> nsteps >> nmigr >> ntime;
+	Setup >> ncities >> nconf >> nsteps >> nmigr >> ntime >> exponent;
 	Setup.close();
 	pop = new int*[nconf];
 	for(int ic = 0; ic < nconf; ic++)
 		pop[ic] = new int[ncities];
 	Primes.open("../Random/Primes");
-	for(int i = 0; i < rank * nseed; i++)
+	for(int i = 0; i < (rank+1) * nseed; i++)
     	Primes >> p1 >> p2;
 	Primes >> p1 >> p2;
 	Primes.close();
@@ -118,7 +118,7 @@ void Input(int rank, int nseed) {
 	Seed.close();
 	// Random setup
 	rnd.SetRandom(seed, p1, p2);
-	cout << endl << "Node: " << rank << ", Performing a " << nsteps << " steps genetic simulation with " << ncities;
+	cout << endl << "Node " << rank << ": Performing a " << nsteps << " steps genetic simulation with " << ncities;
 	cout << " cities, using a population of " << nconf << " elements" << endl;
 }
 
@@ -276,8 +276,24 @@ void Queue(int index) {
 		population[index][ncities - len + ic] = cluster[ic];
 }
 
+// Mutations
+void Mutations() {
+	// Permutation
+	if(rnd.Rannyu() <= 0.1)
+		Permutation(int(ncities * rnd.Rannyu()));
+	// Permutation Cluster
+	if(rnd.Rannyu() <= 0.1)
+		PermutationCluster(int(ncities * rnd.Rannyu()));
+	// Reverse
+	if(rnd.Rannyu() <= 0.1)
+		Reverse(int(ncities * rnd.Rannyu()));
+	// Queue
+	if(rnd.Rannyu() <= 0.1)
+		Queue(int(ncities * rnd.Rannyu()));
+}
+
 // Crossover
-vector<int> CrossingOver(int i1, int i2) {
+void CrossingOver(int i1, int i2) {
 
 	int pos = int(rnd.Rannyu(1., double(ncities)));
 	int cont = 0;
@@ -319,22 +335,17 @@ vector<int> CrossingOver(int i1, int i2) {
 	if(a2.size() != 0)
 		for(int ic = 0; ic < a2.size(); ic++) 
 			g2[ncities - 1 - ic] = a2[ic];
-	
-	// Double crossing over
-	// if(rnd.Rannyu() <= (1. / 16.))		
-	
-	if(SwapRule(g1, g2))
-		return g1;
-	else
-		return g2;
+		
+	population[nconf - 2] = g1;
+	population[nconf - 1] = g2;
 }
 
 // Selection
-void Selection() {
-	in1 = int(ncities * pow(rnd.Rannyu(), 1.5));
-	in2 = int(ncities * pow(rnd.Rannyu(), 1.5));
+void Selection(double alpha) {
+	in1 = int(ncities * pow(rnd.Rannyu(), alpha));
+	in2 = int(ncities * pow(rnd.Rannyu(), alpha));
 	while(in1 == in2)
-		in2 = int(ncities * rnd.Rannyu());
+		in2 = int(ncities * pow(rnd.Rannyu(), alpha));
 }
 
 // Print data on file
@@ -363,6 +374,16 @@ void PrintFile(int istep, int rank) {
 	// Closing stream
 	Best.close();
 	Mean.close();
+}
+
+// Print best path on file
+void PrintBestPath(int rank) {
+	ofstream Output;
+	Output.open("./output/bestPath/output_bestPath" + to_string(rank) + ".dat");
+	Output << "Best path (Length = " << setw(8) << PathLength(population[0]) << "):" << endl;
+	for(int ic = 0; ic < ncities; ic++)
+		Output << setw(4) << population[0][ic] << endl;
+	Output.close();
 }
 
 // Best path

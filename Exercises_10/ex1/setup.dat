@@ -1,9 +1,9 @@
 50
-100
-20000
-284
-
-
+200
+50000
+20
+100000
+2.
 
 
 
@@ -11,4 +11,6 @@
 1. ncities
 2. nconf
 3. nsteps
-4. nseed
+4. nmigr
+5. ntime
+6. exponent selection
