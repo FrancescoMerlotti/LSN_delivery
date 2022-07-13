@@ -1,0 +1,19 @@
+0
+0
+1.5415
+108
+1.1
+2.2
+0.0005
+25
+5000
+
+1. iNVET										(1 MC, 0 MD)
+2. restart										(0 no, 1 yes)
+3. starting temperature							(0.8 solid, 1.1 liquid, 1.2 gas MC) (1.5415 solid, 1.9855 liquid, 0.937 gas MD)
+4. number of particles							(108)
+5. density										(1.1 solid, 0.8 liquid, 0.05 gas)
+6. cut off radius 								(2.2 solid, 2.5 liquid, 5. gas)
+7. time step 									(0.1 solid, 0.2 liquid, 0.75 gas MC) (0.0005 MD)
+8. number of blocks								(25)
+9. number of steps per block					(5000)

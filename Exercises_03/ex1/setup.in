@@ -1,0 +1,15 @@
+1
+1
+100
+1000
+100000
+
+
+
+
+
+1. flag 1 (0 call, 1 put)
+2. flag 2 (0 directly, 1 descrete)
+3. nblocks
+4. nsteps
+5. nthrows
